@@ -246,7 +246,8 @@ def parse_html(html, base_url):
             m_date = DATE_RE.search(raw_title)
             if m_date: date = m_date.group()
 
-        results.append({"title": title, "date": date, "link": link})
+        # 수정 포인트: 찌꺼기가 제거된 clean_title을 저장하도록 설정
+        results.append({"title": clean_title, "date": date, "link": link})
 
         if len(results) >= 15:
             break
@@ -296,7 +297,6 @@ def scrape_jobs(url):
     except Exception:
         pass
 
-    # GitHub Actions에서는 Playwright 브라우저가 별도 설치되어 있어야 함
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
@@ -336,15 +336,9 @@ def send_telegram(text):
 
 # ── 이전에 본 공고 기록 ──
 def normalize_title(title):
-    """저장/비교 기준을 통일하기 위한 제목 표준화.
-    눈에 안 보이는 유니코드 공백(NBSP 등)을 일반 공백으로 바꾸고,
-    연속 공백을 하나로, 앞뒤 공백 제거. 사람 눈엔 같은데 컴퓨터가
-    다르게 보던 제목을 동일하게 만들어 중복 알림을 막는다."""
     if not title:
         return title
-    # 각종 유니코드 공백류를 일반 공백으로
     t = re.sub(r'[\u00a0\u2002\u2003\u2007\u200b\u3000\t\r\n]', ' ', title)
-    # 연속 공백 → 하나
     t = re.sub(r'\s+', ' ', t)
     return t.strip()
 
@@ -370,7 +364,6 @@ def main():
         name = f["name"]
         print(f"확인 중: {name}")
         jobs = scrape_jobs(f["url"])
-        # 저장·비교 기준을 통일하기 위해 제목을 표준화
         for j in jobs:
             j["title"] = normalize_title(j["title"])
         prev_titles = set(normalize_title(t) for t in seen.get(name, []))
@@ -388,7 +381,6 @@ def main():
             send_telegram(msg)
             new_count += 1
 
-        # 이번 결과를 기록 (최대 200개까지만 저장해서 파일 비대화 방지)
         seen[name] = list(current_titles)[:200]
 
     save_seen(seen)
