@@ -31,20 +31,25 @@ DEFAULT_FOUNDATIONS = [
     {"name": "한국콘텐츠진흥원",      "category": "국가", "url": "https://www.kocca.kr/kocca/bbs/list/B0159004.do"}
 ]
 
-SEEN_FILE = "seen_jobs.json"  # 이전에 알림 보낸 공고 제목 기록 (저장소에 커밋됨)
+SEEN_FILE = "seen_jobs.json"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36"}
 DATE_RE  = re.compile(r'\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{2}[-./]\d{1,2}[-./]\d{1,2}')
 
 GARBAGE = {"본문 바로가기","주메뉴 바로가기","서비스 전체보기","위로가기","레이어 닫기","초기화","메뉴등록하기","현재주소 복사하기","개인정보처리방침","찾아오시는 길","부조리통합신고센터"}
-SKIP_WORDS = ["최종합격","최종 합격","면접심사","면접 심사","면접전형","서류심사","서류 심사","필기시험","필기 시험","합격자","결과발표","결과 발표","우선협상","입찰공고","입찰 공고","특강","서포터즈","임원","취소공고","정정공고","연기"]
+SKIP_WORDS = ["최종합격","최종 합격","면접심사","면접 심사","면접전형","서류심사","서류 심사","필기시험","필기 시험","합격자","결과발표","결과 발표","우선협상","입찰공고","입찰 공고","특강","서포터즈","임원","취소공고","정정공고","연기", "사무처장", "본부장", "대표이사", "관장", "상임이사", "비상임이사"]
 MUST_WORDS = ["채용"]
 NAV_WORDS = {"로그인","회원가입","바로가기","주메뉴","본문","사이트맵","ENG","english","더보기","TOP","홈","home","이전","다음","재단정보공개","인권경영","기부","문의","아카이브","프린트하기","즐겨찾기","공유","페이스북","트위터","블로그","복사하기","인스타그램","유튜브","네이버","카카오"}
 
-def is_bad(text):
+# ⭐ 수정포인트 1: 콘진원 전용 프리패스 로직 추가
+def is_bad(text, url=""):
     if len(text) < 4 or text in NAV_WORDS or text in GARBAGE: return True
     if any(w in text for w in SKIP_WORDS): return True
-    if not any(w in text for w in MUST_WORDS): return True
+    
+    # 콘진원(kocca.kr) 채용게시판은 '채용' 단어가 없어도 무조건 통과!
+    if "kocca.kr" not in url:
+        if not any(w in text for w in MUST_WORDS): return True
+        
     return False
 
 def normalize_date(date_str):
@@ -66,7 +71,6 @@ def is_too_old(date_str, max_days=730):
         return False
 
 def clean_ifac_title(title):
-    """인천문화재단 제목에서 조회수/부서명/머리말 등 가변 요소 제거."""
     t = title
     t = re.sub(r'^채용공고\s*제목\s*', '', t)
     t = re.sub(r'\s*\d{4}-\d{1,2}-\d{1,2}.*$', '', t)
@@ -106,7 +110,8 @@ def parse_html(html, base_url):
     if "kofic.or.kr" in base_url:
         for a in soup.find_all("a", onclick=re.compile(r"fn_goDetailPage")):
             title = re.sub(r'\s+', ' ', a.get_text(strip=True)).strip()
-            if not title or is_bad(title): continue
+            # is_bad 파라미터 업데이트
+            if not title or is_bad(title, base_url): continue
             m = re.search(r"fn_goDetailPage\((\d+)", a.get("onclick",""))
             link = f"https://www.kofic.or.kr/kofic/business/board/selectBoardDetail.do?boardNumber=4&boardSeqNumber={m.group(1)}" if m else base_url
             p_tr = a.find_parent("tr")
@@ -125,7 +130,8 @@ def parse_html(html, base_url):
             title_el = a.select_one("dl.subject dd p, .subject p, span")
             title = title_el.get_text(strip=True) if title_el else a.get_text(strip=True)
             title = re.sub(r'\s+', ' ', title).strip()
-            if not title or is_bad(title): continue
+            # is_bad 파라미터 업데이트
+            if not title or is_bad(title, base_url): continue
             m = re.search(r"doView\('(\d+)','(\d+)','([^']+)'\)", a.get("onclick",""))
             link = f"https://www.sfac.or.kr{m.group(3)}?cbIdx={m.group(1)}&bcIdx={m.group(2)}&type=" if m else base_url
             tr = a.find_parent("tr")
@@ -161,10 +167,8 @@ def parse_html(html, base_url):
         if "ifac.or.kr" in base_url:
             clean_title = clean_ifac_title(clean_title)
 
-        if len(clean_title) < 10 and any(w in clean_title for w in MUST_WORDS):
-            continue
-
-        if not clean_title or is_bad(clean_title) or clean_title in seen_titles:
+        # is_bad 함수에 base_url 전달 (프리패스 작동)
+        if not clean_title or is_bad(clean_title, base_url) or clean_title in seen_titles:
             continue
 
         seen_titles.add(clean_title)
@@ -209,6 +213,13 @@ def parse_html(html, base_url):
         elif "arte.or.kr" in base_url:
             m = re.search(r"fnView\('([^']+)'\)", combined)
             if m: link = f"https://arte.or.kr/notice/job/notice/Job_BoardView.do?board_id={m.group(1)}"
+            
+        # ⭐ 수정포인트 2: 콘진원 전용 링크 파서 추가
+        elif "kocca.kr" in base_url:
+            if href and "/bbs/view/" in href:
+                link = urljoin(base_url, href)
+            elif not link.startswith("http"):
+                link = urljoin(base_url, link)
 
         elif "arko.or.kr" in base_url:
             if not link.startswith("http"):
@@ -230,7 +241,7 @@ def parse_html(html, base_url):
 
         date = ""
         if p_tr:
-            date_td = p_tr.select_one("td.date, td.reg-date, td.regDate, td.write-date")
+            date_td = p_tr.select_one("td.date, td.reg-date, td.regDate, td.write-date, td:nth-child(4), td:nth-child(5)")
             if date_td:
                 m_date = DATE_RE.search(date_td.get_text(" ", strip=True))
                 if m_date: date = m_date.group()
@@ -241,7 +252,6 @@ def parse_html(html, base_url):
             m_date = DATE_RE.search(raw_title)
             if m_date: date = m_date.group()
 
-        # 수정 포인트: 찌꺼기가 제거된 clean_title을 저장하도록 설정 (유지됨)
         results.append({"title": clean_title, "date": date, "link": link})
 
         if len(results) >= 15:
@@ -304,6 +314,10 @@ def scrape_jobs(url):
             elif "sfac.or.kr" in url:
                 try: page.wait_for_selector('a[onclick*="doView"]', timeout=15000)
                 except: page.wait_for_timeout(5000)
+            # ⭐ 수정포인트 3: 콘진원 전용 플레이라이트 대기 시간 추가
+            elif "kocca.kr" in url:
+                try: page.wait_for_selector('.board-list, table', timeout=15000)
+                except: page.wait_for_timeout(8000)
             else:
                 try: page.wait_for_selector('table tbody tr, ul.board-list li, a[onclick*="fnView"]', timeout=10000)
                 except: page.wait_for_timeout(8000)
@@ -313,7 +327,6 @@ def scrape_jobs(url):
     except Exception:
         return []
 
-# ── 텔레그램 전송 ──
 def send_telegram(text):
     if not BOT_TOKEN or not CHAT_ID:
         print("텔레그램 토큰/채팅ID가 설정되지 않았습니다.")
@@ -329,7 +342,6 @@ def send_telegram(text):
     except Exception as e:
         print(f"텔레그램 전송 실패: {e}")
 
-# ── 이전에 본 공고 기록 ──
 def normalize_title(title):
     if not title:
         return title
@@ -350,7 +362,6 @@ def save_seen(seen):
     with open(SEEN_FILE, "w", encoding="utf-8") as f:
         json.dump(seen, f, ensure_ascii=False, indent=2)
 
-# ── 메인 ──
 def main():
     seen = load_seen()
     new_count = 0
@@ -376,7 +387,10 @@ def main():
             send_telegram(msg)
             new_count += 1
 
-        seen[name] = list(current_titles)[:200]
+        if jobs:
+            seen[name] = list(current_titles)[:200]
+        else:
+            print(f"⚠️ {name}: 공고를 불러오지 못해 기존 기억을 유지합니다.")
 
     save_seen(seen)
     print(f"완료. 새 공고 {new_count}건 알림 전송")
