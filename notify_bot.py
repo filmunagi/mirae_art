@@ -64,6 +64,19 @@ def is_too_old(date_str, max_days=730):
     except:
         return False
 
+def clean_ifac_title(title):
+    """인천문화재단 제목에서 조회수/부서명/머리말 등 가변 요소 제거.
+    형태: '채용공고 제목 [진짜 제목] YYYY-MM-DD [조회수] [부서명]'
+    → 날짜(YYYY-MM-DD) 이후를 통째로 자르고, 맨 앞 '채용공고 제목'도 제거."""
+    t = title
+    # 맨 앞 '채용공고 제목' 머리말 제거
+    t = re.sub(r'^채용공고\s*제목\s*', '', t)
+    # 'YYYY-MM-DD' 날짜와 그 뒤(조회수+부서명) 전부 제거
+    t = re.sub(r'\s*\d{4}-\d{1,2}-\d{1,2}.*$', '', t)
+    # '공지' 같은 상태 표시 제거
+    t = re.sub(r'\s*공지\s*$', '', t)
+    return t.strip()
+
 def parse_html(html, base_url):
     soup = BeautifulSoup(html, "html.parser")
     results = []
@@ -148,6 +161,10 @@ def parse_html(html, base_url):
             if p: title = re.sub(r'\s+', ' ', p.get_text(" ", strip=True)).strip()
 
         clean_title = re.sub(r'(대기중|모집중|마감|접수중|예정|자세히 보기|상세보기|NEW|new|\d{4}\.\d{2}\.\d{2})', '', title).strip()
+
+        # 인천문화재단은 조회수/부서명이 제목에 섞여 들어와 중복 알림 발생 → 정리
+        if "ifac.or.kr" in base_url:
+            clean_title = clean_ifac_title(clean_title)
 
         if len(clean_title) < 10 and any(w in clean_title for w in MUST_WORDS):
             continue
