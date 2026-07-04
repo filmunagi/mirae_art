@@ -335,6 +335,19 @@ def send_telegram(text):
         print(f"텔레그램 전송 실패: {e}")
 
 # ── 이전에 본 공고 기록 ──
+def normalize_title(title):
+    """저장/비교 기준을 통일하기 위한 제목 표준화.
+    눈에 안 보이는 유니코드 공백(NBSP 등)을 일반 공백으로 바꾸고,
+    연속 공백을 하나로, 앞뒤 공백 제거. 사람 눈엔 같은데 컴퓨터가
+    다르게 보던 제목을 동일하게 만들어 중복 알림을 막는다."""
+    if not title:
+        return title
+    # 각종 유니코드 공백류를 일반 공백으로
+    t = re.sub(r'[\u00a0\u2002\u2003\u2007\u200b\u3000\t\r\n]', ' ', title)
+    # 연속 공백 → 하나
+    t = re.sub(r'\s+', ' ', t)
+    return t.strip()
+
 def load_seen():
     if os.path.exists(SEEN_FILE):
         try:
@@ -357,7 +370,10 @@ def main():
         name = f["name"]
         print(f"확인 중: {name}")
         jobs = scrape_jobs(f["url"])
-        prev_titles = set(seen.get(name, []))
+        # 저장·비교 기준을 통일하기 위해 제목을 표준화
+        for j in jobs:
+            j["title"] = normalize_title(j["title"])
+        prev_titles = set(normalize_title(t) for t in seen.get(name, []))
         current_titles = {j["title"] for j in jobs}
 
         new_jobs = [j for j in jobs if j["title"] not in prev_titles]
