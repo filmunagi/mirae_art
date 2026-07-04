@@ -28,6 +28,7 @@ DEFAULT_FOUNDATIONS = [
     {"name": "노무현재단",            "category": "기타", "url": "https://www.knowhow.or.kr/util/search_result.php?sword=%EC%B1%84%EC%9A%A9"},
     {"name": "서울영상위원회",        "category": "지역", "url": "https://www.seoulfc.or.kr/ReferenceLibrary/Notice/"},
     {"name": "영화진흥위원회",        "category": "국가", "url": "https://www.kofic.or.kr/kofic/business/board/selectBoardList.do?boardNumber=4"},
+    {"name": "한국콘텐츠진흥원",      "category": "국가", "url": "https://www.kocca.kr/kocca/bbs/list/B0159004.do?menuNo=204803"},
 ]
 
 SEEN_FILE = "seen_jobs.json"  # 이전에 알림 보낸 공고 제목 기록 (저장소에 커밋됨)
@@ -159,6 +160,13 @@ def parse_html(html, base_url):
         if "ifac.or.kr" in base_url:
             clean_title = clean_ifac_title(clean_title)
 
+        # 콘진: 채용정보 게시판에 결과발표가 섞여 있어 실제 공고만 남김
+        if "kocca.kr" in base_url:
+            KOCCA_SKIP = ["합격자", "서류전형", "면접전형", "면접심사", "입사대상자",
+                          "발표", "결과", "합격", "최종", "취소", "우선협상"]
+            if any(w in clean_title for w in KOCCA_SKIP):
+                continue
+
         if len(clean_title) < 10 and any(w in clean_title for w in MUST_WORDS):
             continue
 
@@ -215,6 +223,14 @@ def parse_html(html, base_url):
         elif "kofic.or.kr" in base_url:
             m = re.search(r"fn_goDetailPage\((\d+)\s*,\s*'([^']+)'", combined)
             if m: link = f"https://www.kofic.or.kr/kofic/business/board/selectBoardDetail.do?boardNumber=4&boardSeqNumber={m.group(1)}"
+            elif not link.startswith("http"):
+                link = urljoin(base_url, link) if link and not link.startswith("javascript") else base_url
+
+        elif "kocca.kr" in base_url:
+            # /kocca/bbs/view/B0159004/2011843.do 형태 → 완전한 URL로
+            m = re.search(r"(/kocca/bbs/view/[^\s\"']+\.do)", combined)
+            if m:
+                link = urljoin(base_url, m.group(1))
             elif not link.startswith("http"):
                 link = urljoin(base_url, link) if link and not link.startswith("javascript") else base_url
 
@@ -280,6 +296,26 @@ def scrape_jobs(url):
                 "categoryList": "10011003", "searchSelectBox": "title", "searchInput": "",
             }
             r = requests.post(url, data=post_data, headers=HEADERS, timeout=10)
+            r.raise_for_status()
+            r.encoding = r.apparent_encoding
+            results = parse_html(r.text, url)
+            if results: return results
+        except Exception:
+            pass
+
+    if "kocca.kr" in url:
+        # 콘진은 봇 차단이 강해서 진짜 브라우저처럼 보이는 강화 헤더로 요청
+        try:
+            strong_headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Referer': 'https://www.kocca.kr/',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Site': 'same-origin',
+            }
+            s = requests.Session()
+            r = s.get(url, headers=strong_headers, timeout=12)
             r.raise_for_status()
             r.encoding = r.apparent_encoding
             results = parse_html(r.text, url)
