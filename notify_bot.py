@@ -227,10 +227,10 @@ def parse_html(html, base_url):
                 link = urljoin(base_url, link) if link and not link.startswith("javascript") else base_url
 
         elif "kocca.kr" in base_url:
-            # /kocca/bbs/view/B0159004/2011843.do 형태 → 완전한 URL로
-            m = re.search(r"(/kocca/bbs/view/[^\s\"']+\.do)", combined)
+            # /kocca/bbs/view/B0159004/2011843.do 형태 → menuNo 붙여야 내용이 보임
+            m = re.search(r"(/kocca/bbs/view/[^\s\"'?]+\.do)", combined)
             if m:
-                link = urljoin(base_url, m.group(1))
+                link = urljoin(base_url, m.group(1)) + "?menuNo=204803"
             elif not link.startswith("http"):
                 link = urljoin(base_url, link) if link and not link.startswith("javascript") else base_url
 
