@@ -28,6 +28,7 @@ DEFAULT_FOUNDATIONS = [
     {"name": "노무현재단",            "category": "기타", "url": "https://www.knowhow.or.kr/util/search_result.php?sword=%EC%B1%84%EC%9A%A9"},
     {"name": "서울영상위원회",        "category": "지역", "url": "https://www.seoulfc.or.kr/ReferenceLibrary/Notice/"},
     {"name": "영화진흥위원회",        "category": "국가", "url": "https://www.kofic.or.kr/kofic/business/board/selectBoardList.do?boardNumber=4"},
+    {"name": "한국콘텐츠진흥원",      "category": "국가", "url": "https://www.kocca.kr/kocca/bbs/list/B0159004.do"}
 ]
 
 SEEN_FILE = "seen_jobs.json"  # 이전에 알림 보낸 공고 제목 기록 (저장소에 커밋됨)
@@ -65,15 +66,10 @@ def is_too_old(date_str, max_days=730):
         return False
 
 def clean_ifac_title(title):
-    """인천문화재단 제목에서 조회수/부서명/머리말 등 가변 요소 제거.
-    형태: '채용공고 제목 [진짜 제목] YYYY-MM-DD [조회수] [부서명]'
-    → 날짜(YYYY-MM-DD) 이후를 통째로 자르고, 맨 앞 '채용공고 제목'도 제거."""
+    """인천문화재단 제목에서 조회수/부서명/머리말 등 가변 요소 제거."""
     t = title
-    # 맨 앞 '채용공고 제목' 머리말 제거
     t = re.sub(r'^채용공고\s*제목\s*', '', t)
-    # 'YYYY-MM-DD' 날짜와 그 뒤(조회수+부서명) 전부 제거
     t = re.sub(r'\s*\d{4}-\d{1,2}-\d{1,2}.*$', '', t)
-    # '공지' 같은 상태 표시 제거
     t = re.sub(r'\s*공지\s*$', '', t)
     return t.strip()
 
@@ -162,7 +158,6 @@ def parse_html(html, base_url):
 
         clean_title = re.sub(r'(대기중|모집중|마감|접수중|예정|자세히 보기|상세보기|NEW|new|\d{4}\.\d{2}\.\d{2})', '', title).strip()
 
-        # 인천문화재단은 조회수/부서명이 제목에 섞여 들어와 중복 알림 발생 → 정리
         if "ifac.or.kr" in base_url:
             clean_title = clean_ifac_title(clean_title)
 
@@ -246,7 +241,7 @@ def parse_html(html, base_url):
             m_date = DATE_RE.search(raw_title)
             if m_date: date = m_date.group()
 
-        # 수정 포인트: 찌꺼기가 제거된 clean_title을 저장하도록 설정
+        # 수정 포인트: 찌꺼기가 제거된 clean_title을 저장하도록 설정 (유지됨)
         results.append({"title": clean_title, "date": date, "link": link})
 
         if len(results) >= 15:
