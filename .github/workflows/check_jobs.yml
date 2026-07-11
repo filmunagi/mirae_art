@@ -6,6 +6,11 @@ on:
     - cron: '17 */2 * * *'
   workflow_dispatch:  # 수동 실행 버튼도 사용 가능
 
+# 동시 실행 방지: 실행이 겹치면 앞선 실행이 끝날 때까지 대기 (git 경합 원천 차단)
+concurrency:
+  group: job-alert-bot
+  cancel-in-progress: false
+
 jobs:
   check-jobs:
     runs-on: ubuntu-latest
@@ -27,7 +32,8 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python notify_bot.py
+        run: |
+          python notify_bot.py
 
       - name: 결과 저장 (seen_jobs.json 커밋)
         run: |
