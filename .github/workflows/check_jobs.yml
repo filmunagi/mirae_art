@@ -3,7 +3,7 @@ name: 채용공고 확인 및 텔레그램 알림
 on:
   schedule:
     # 매 3시간마다 실행 (UTC 기준, 한국시간은 +9시간)
-    - cron: '17 */3 * * *'
+    - cron: '17 */2 * * *'
   workflow_dispatch:  # 수동 실행 버튼도 사용 가능
 
 jobs:
