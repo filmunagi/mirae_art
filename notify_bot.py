@@ -399,10 +399,18 @@ def main():
         name = f["name"]
         print(f"확인 중: {name}")
         jobs = scrape_jobs(f["url"])
+
+        # [핵심 안전장치 1] 크롤링 실패(0건)면 이 기관 기록은 절대 건드리지 않음
+        # 사이트가 일시적으로 느리거나 막혔을 때 기록이 지워지는 사고 방지
+        if not jobs:
+            print(f"  → {name}: 수집 0건 — 기존 기록 보존(저장 생략)")
+            continue
+
         for j in jobs:
             j["title"] = normalize_title(j["title"])
-        prev_titles = set(normalize_title(t) for t in seen.get(name, []))
-        current_titles = {j["title"] for j in jobs}
+
+        prev_list = [normalize_title(t) for t in seen.get(name, [])]
+        prev_titles = set(prev_list)
 
         new_jobs = [j for j in jobs if j["title"] not in prev_titles]
 
@@ -416,7 +424,15 @@ def main():
             send_telegram(msg)
             new_count += 1
 
-        seen[name] = list(current_titles)[:200]
+        # [핵심 안전장치 2] 덮어쓰기 금지 — 기존 기록에 새 제목만 추가(누적)
+        # 한 번 알림 간 공고는 사이트에서 내려가도 기록에 계속 남아 재알림 안 됨
+        merged = list(prev_list)
+        for j in new_jobs:
+            if j["title"] not in prev_titles:
+                merged.append(j["title"])
+                prev_titles.add(j["title"])
+        # 무한 성장 방지: 최근 300개만 유지 (오래된 것부터 삭제)
+        seen[name] = merged[-300:]
 
     save_seen(seen)
     print(f"완료. 새 공고 {new_count}건 알림 전송")
