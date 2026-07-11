@@ -3,7 +3,7 @@
 # job_tracker.py의 scrape_jobs/parse_html 로직을 그대로 재사용
 # =============================================
 
-import json, os, re, requests
+import json, os, re, requests, time
 from bs4 import BeautifulSoup
 from datetime import datetime
 from urllib.parse import urljoin
@@ -355,19 +355,26 @@ def scrape_jobs(url):
 
 # ── 텔레그램 전송 ──
 def send_telegram(text):
+    """전송 성공 시 True, 실패 시 False 반환.
+    실패한 공고는 기록에 남기지 않아 다음 실행 때 자동 재시도됨."""
     if not BOT_TOKEN or not CHAT_ID:
         print("텔레그램 토큰/채팅ID가 설정되지 않았습니다.")
-        return
+        return False
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     try:
-        requests.post(url, data={
+        r = requests.post(url, data={
             "chat_id": CHAT_ID,
             "text": text,
             "parse_mode": "HTML",
             "disable_web_page_preview": False,
         }, timeout=10)
+        if r.status_code == 200 and r.json().get("ok"):
+            return True
+        print(f"텔레그램 전송 실패: HTTP {r.status_code} / {r.text[:120]}")
+        return False
     except Exception as e:
         print(f"텔레그램 전송 실패: {e}")
+        return False
 
 # ── 이전에 본 공고 기록 ──
 def normalize_title(title):
@@ -414,6 +421,8 @@ def main():
 
         new_jobs = [j for j in jobs if j["title"] not in prev_titles]
 
+        # 전송에 성공한 공고만 기록 대상에 넣음 (실패분은 다음 실행 때 자동 재시도)
+        sent_titles = []
         for job in new_jobs:
             msg = (
                 f"🆕 <b>{name}</b>\n"
@@ -421,16 +430,18 @@ def main():
                 f"📅 {job.get('date','')}\n"
                 f"{job.get('link','')}"
             )
-            send_telegram(msg)
-            new_count += 1
+            if send_telegram(msg):
+                sent_titles.append(job["title"])
+                new_count += 1
+            time.sleep(0.5)  # 텔레그램 초당 전송 제한 회피
 
         # [핵심 안전장치 2] 덮어쓰기 금지 — 기존 기록에 새 제목만 추가(누적)
         # 한 번 알림 간 공고는 사이트에서 내려가도 기록에 계속 남아 재알림 안 됨
         merged = list(prev_list)
-        for j in new_jobs:
-            if j["title"] not in prev_titles:
-                merged.append(j["title"])
-                prev_titles.add(j["title"])
+        for t in sent_titles:
+            if t not in prev_titles:
+                merged.append(t)
+                prev_titles.add(t)
         # 무한 성장 방지: 최근 300개만 유지 (오래된 것부터 삭제)
         seen[name] = merged[-300:]
 
