@@ -287,17 +287,47 @@ def parse_html(html, base_url):
 def scrape_jobs(url):
     if not url or not url.startswith("http"): return []
 
+    # sfac — 목록을 XHR(ListSfac.do)로 직접 요청 (Playwright 없이 1~2초)
+    # 실패 시 아래 기존 경로(requests→Playwright)로 자동 폴백되어 안전
+    if "sfac.or.kr" in url:
+        try:
+            r = requests.post(
+                "https://www.sfac.or.kr/site/SFAC_KOR/ex/bbs/ListSfac.do",
+                data={
+                    "cbIdx": "964", "pageIndex": "1", "searchKey": "",
+                    "tgtTypeCd": "", "cateTypeCd": "",
+                    "viewUrl": "/opensquare/notice/recruit_list.do",
+                    "listUrl": "/opensquare/notice/recruit_list.do",
+                    "registUrl": "", "type": "",
+                },
+                headers=HEADERS, timeout=10)
+            r.raise_for_status()
+            r.encoding = r.apparent_encoding
+            if "doView" in r.text:
+                results = parse_html(r.text, url)
+                if results: return results
+        except Exception:
+            pass
+
+
     if "kawf.kr" in url:
         try:
-            all_html = ""
-            for page in range(1, 4):
+            from concurrent.futures import ThreadPoolExecutor
+            def _kawf_page(page):
                 r = requests.post(url, data={
                     "searchCondition": "0", "search": "",
                     "searchKeyword": "채용", "cpg": str(page)
                 }, headers=HEADERS, timeout=10)
                 r.raise_for_status()
                 r.encoding = r.apparent_encoding
-                all_html += r.text
+                return r.text
+            # 3페이지를 동시에 요청 — 순차 대비 약 3배 빠름
+            with ThreadPoolExecutor(max_workers=3) as _ex:
+                all_html = "".join(_ex.map(_kawf_page, [1, 2, 3]))
+            # 게시판 마크업이 확인되면 0건이어도 확정 반환
+            # (같은 페이지를 보는 Playwright 재시도는 무의미 — 20~30초 낭비 방지)
+            if "Common_Bbs_Table_Type1_Item" in all_html:
+                return parse_html(all_html, url)
             results = parse_html(all_html, url)
             if results: return results
         except Exception:
