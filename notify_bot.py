@@ -29,6 +29,7 @@ DEFAULT_FOUNDATIONS = [
     {"name": "서울영상위원회",        "category": "지역", "url": "https://www.seoulfc.or.kr/ReferenceLibrary/Notice/"},
     {"name": "영화진흥위원회",        "category": "국가", "url": "https://www.kofic.or.kr/kofic/business/board/selectBoardList.do?boardNumber=4"},
     {"name": "한국콘텐츠진흥원",      "category": "국가", "url": "https://www.kocca.kr/kocca/bbs/list/B0159004.do?menuNo=204803"},
+    {"name": "시청자미디어재단",      "category": "국가", "url": "https://kcmf.or.kr/KCMF/contents/KCMF020500.do"},
 ]
 
 SEEN_FILE = "seen_jobs.json"  # 이전에 알림 보낸 공고 제목 기록 (저장소에 커밋됨)
@@ -167,6 +168,12 @@ def parse_html(html, base_url):
             if any(w in clean_title for w in KOCCA_SKIP):
                 continue
 
+        # 시청자미디어재단: '채용 임직원 친인척 현황 공개' 같은 비공고 게시글 제외
+        if "kcmf.or.kr" in base_url:
+            KCMF_SKIP = ["친인척", "현황 공개", "현황공개"]
+            if any(w in clean_title for w in KCMF_SKIP):
+                continue
+
         if len(clean_title) < 10 and any(w in clean_title for w in MUST_WORDS):
             continue
 
@@ -231,6 +238,14 @@ def parse_html(html, base_url):
             m = re.search(r"(/kocca/bbs/view/[^\s\"'?]+\.do)", combined)
             if m:
                 link = urljoin(base_url, m.group(1)) + "?menuNo=204803"
+            elif not link.startswith("http"):
+                link = urljoin(base_url, link) if link and not link.startswith("javascript") else base_url
+
+        elif "kcmf.or.kr" in base_url:
+            # fn_goView('20260622175620701106') → 브라우저에서 실제 확인된 상세 URL 형식 재현
+            m = re.search(r"fn_goView\('(\d+)'\)", combined)
+            if m:
+                link = f"https://kcmf.or.kr/KCMF/contents/KCMF020500.do?schM=view&page=1&viewCount=10&id={m.group(1)}&schBdcode=&schGroupCode="
             elif not link.startswith("http"):
                 link = urljoin(base_url, link) if link and not link.startswith("javascript") else base_url
 
@@ -303,14 +318,15 @@ def scrape_jobs(url):
         except Exception:
             pass
 
-    if "kocca.kr" in url:
-        # 콘진은 봇 차단이 강해서 진짜 브라우저처럼 보이는 강화 헤더로 요청
+    if "kocca.kr" in url or "kcmf.or.kr" in url:
+        # 콘진/시청자미디어재단은 봇 차단이 강해서 진짜 브라우저처럼 보이는 강화 헤더로 요청
         try:
+            ref = 'https://www.kocca.kr/' if 'kocca.kr' in url else 'https://kcmf.or.kr/'
             strong_headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                 'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Referer': 'https://www.kocca.kr/',
+                'Referer': ref,
                 'Upgrade-Insecure-Requests': '1',
                 'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Site': 'same-origin',
             }
