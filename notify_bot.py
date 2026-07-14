@@ -305,16 +305,20 @@ def scrape_jobs(url):
 
     if "kofic.or.kr" in url:
         try:
-            post_data = {
-                "categorySelectValue": "-1", "boardSeqNumber": "", "boardPassword": "",
-                "viewType": "", "curPage": "1", "searchTitle": "", "searchUser": "",
-                "categoryList": "10011003", "searchSelectBox": "title", "searchInput": "",
-            }
-            r = requests.post(url, data=post_data, headers=HEADERS, timeout=10)
-            r.raise_for_status()
-            r.encoding = r.apparent_encoding
-            results = parse_html(r.text, url)
-            if results: return results
+            all_html = ""
+            for page in range(1, 4):  # 채용 글이 2~3페이지로 밀려나는 경우 대비
+                post_data = {
+                    "categorySelectValue": "-1", "boardSeqNumber": "", "boardPassword": "",
+                    "viewType": "", "curPage": str(page), "searchTitle": "", "searchUser": "",
+                    "categoryList": "10011003", "searchSelectBox": "title", "searchInput": "",
+                }
+                r = requests.post(url, data=post_data, headers=HEADERS, timeout=10)
+                r.raise_for_status()
+                r.encoding = r.apparent_encoding
+                all_html += r.text
+            # POST가 성공했으면 결과가 0건이어도 확정 반환 (같은 페이지를 보는
+            # Playwright 재시도는 무의미하고 시간만 낭비하므로 건너뜀)
+            return parse_html(all_html, url)
         except Exception:
             pass
 
