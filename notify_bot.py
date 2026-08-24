@@ -6,7 +6,7 @@
 import json, os, re, requests, time
 from bs4 import BeautifulSoup
 from datetime import datetime
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 # ── 텔레그램 설정 (GitHub Secrets에서 읽어옴) ──
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -30,9 +30,23 @@ DEFAULT_FOUNDATIONS = [
     {"name": "영화진흥위원회",        "category": "국가", "url": "https://www.kofic.or.kr/kofic/business/board/selectBoardList.do?boardNumber=4"},
     {"name": "한국콘텐츠진흥원",      "category": "국가", "url": "https://www.kocca.kr/kocca/bbs/list/B0159004.do?menuNo=204803"},
     {"name": "시청자미디어재단",      "category": "국가", "url": "https://kcmf.or.kr/KCMF/contents/KCMF020500.do"},
+    {"name": "남동문화재단",          "category": "지역", "url": "https://namdongcf.or.kr/user/board/list.php?TP=&sq=&board_code=announcement&search=&page=1&cat=C&sns_title=%EC%9D%B8%EC%B2%9C%EA%B4%91%EC%97%AD%EC%8B%9C+%EB%82%A8%EB%8F%99%EB%AC%B8%ED%99%94%EC%9E%AC%EB%8B%A8-%EA%B3%A0%EC%8B%9C%EA%B3%B5%EA%B3%A0&srchKey=AB&srchValue="},
+    {"name": "연수문화재단",          "category": "지역", "url": "https://www.ysfac.or.kr/user/board/list.php?board_code=announcement&cat=3&srchValue="},
+    {"name": "영등포문화재단",        "category": "지역", "url": "https://www.ydpcf.or.kr/board.do?bid=3"},
+    {"name": "제물포문화재단",        "category": "지역", "url": "https://www.jcf.or.kr/main/inform/job.jsp"},
+    {"name": "마포문화재단",          "category": "지역", "url": "https://www.mfac.or.kr/communication/notice_all_list.jsp?sc_type=3"},
 ]
 
 SEEN_FILE = "seen_jobs.json"  # 이전에 알림 보낸 공고 제목 기록 (저장소에 커밋됨)
+
+def is_domain(url, domain):
+    """부분 문자열이 아닌 정확한 도메인 일치 검사 (ysfac.or.kr가 sfac.or.kr로
+    오매칭되는 사고 방지)."""
+    try:
+        host = urlparse(url).netloc.lower()
+    except Exception:
+        return False
+    return host == domain or host.endswith('.' + domain)
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36"}
 DATE_RE  = re.compile(r'\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{2}[-./]\d{1,2}[-./]\d{1,2}')
@@ -120,7 +134,7 @@ def parse_html(html, base_url):
             if len(results) >= 10: break
         if results: return results
 
-    if "sfac.or.kr" in base_url:
+    if is_domain(base_url, "sfac.or.kr"):
         for a in soup.find_all("a", onclick=re.compile(r"doView\(")):
             title_el = a.select_one("dl.subject dd p, .subject p, span")
             title = title_el.get_text(strip=True) if title_el else a.get_text(strip=True)
@@ -215,9 +229,16 @@ def parse_html(html, base_url):
                 if v_ids: link = f"https://www.ifac.or.kr/bbs/view.do?bbsSn={v_ids[0]}&key=m2501152808232&bbsCtgrySn=74"
                 else: link = base_url
 
-        elif "sfac.or.kr" in base_url:
+        elif is_domain(base_url, "sfac.or.kr"):
             m = re.search(r"doView\('(\d+)','(\d+)','([^']+)'\)", combined)
             if m: link = f"https://www.sfac.or.kr{m.group(3)}?cbIdx={m.group(1)}&bcIdx={m.group(2)}&type="
+
+        elif is_domain(base_url, "mfac.or.kr"):  # 마포 — seq 속성으로 상세 URL 구성
+            m = re.search(r'seq="(\d+)"', combined)
+            if m:
+                link = (f"https://www.mfac.or.kr/communication/notice_all_view.jsp"
+                        f"?sc_b_code=BOARD_1207683401&sc_type=3&pk_seq={m.group(1)}"
+                        f"&sc_cond=b_subject&page=1")
 
         elif "arte.or.kr" in base_url:
             m = re.search(r"fnView\('([^']+)'\)", combined)
@@ -289,7 +310,7 @@ def scrape_jobs(url):
 
     # sfac — 목록을 XHR(ListSfac.do)로 직접 요청 (Playwright 없이 1~2초)
     # 실패 시 아래 기존 경로(requests→Playwright)로 자동 폴백되어 안전
-    if "sfac.or.kr" in url:
+    if is_domain(url, "sfac.or.kr"):
         try:
             r = requests.post(
                 "https://www.sfac.or.kr/site/SFAC_KOR/ex/bbs/ListSfac.do",
@@ -391,7 +412,7 @@ def scrape_jobs(url):
             if "kawf.kr" in url:
                 try: page.wait_for_load_state("networkidle", timeout=15000)
                 except: page.wait_for_timeout(8000)
-            elif "sfac.or.kr" in url:
+            elif is_domain(url, "sfac.or.kr"):
                 try: page.wait_for_selector('a[onclick*="doView"]', timeout=15000)
                 except: page.wait_for_timeout(5000)
             else:
